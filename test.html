@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>BAG test</title>
+
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 20px;
+    background: #111;
+    color: #eee;
+  }
+
+  input {
+    width: 70%;
+    padding: 12px;
+    box-sizing: border-box;
+    background: #222;
+    color: white;
+    border: 1px solid #555;
+    border-radius: 6px;
+  }
+
+  button {
+    padding: 12px 18px;
+    margin-left: 5px;
+    cursor: pointer;
+  }
+
+  #status {
+    margin-top: 20px;
+    padding: 15px;
+    background: #222;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    font-family: monospace;
+  }
+</style>
+</head>
+
+<body>
+
+<h2>🇳🇱 BAG API test</h2>
+
+<input
+  id="address"
+  value="Stationsweg 1, Leeuwarden"
+  placeholder="Nederlands adres"
+>
+
+<button id="go">Zoek</button>
+
+<div id="status">
+Klaar.
+</div>
+
+
+<script>
+
+const address =
+  document.querySelector('#address');
+
+const button =
+  document.querySelector('#go');
+
+const status =
+  document.querySelector('#status');
+
+
+function show(text) {
+  status.textContent = text;
+}
+
+
+async function geocode(query) {
+
+  const url =
+    'https://api.pdok.nl/bzk/locatieserver/search/v3_1/free' +
+    '?fq=type:adres' +
+    '&q=' +
+    encodeURIComponent(query) +
+    '&rows=5';
+
+
+  const response =
+    await fetch(url);
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      'PDOK geocoding HTTP ' +
+      response.status
+    );
+  }
+
+
+  const json =
+    await response.json();
+
+
+  const docs =
+    json.response?.docs || [];
+
+
+  if (!docs.length) {
+
+    throw new Error(
+      'Adres niet gevonden'
+    );
+  }
+
+
+  const d =
+    docs[0];
+
+
+  return {
+    label:
+      d.weergavenaam || query,
+
+    lon:
+      Number(d.wgs84_x),
+
+    lat:
+      Number(d.wgs84_y)
+  };
+}
+
+
+async function findBagAddress(
+  lon,
+  lat
+) {
+
+  /*
+   * BAG adres-collectie.
+   *
+   * We gebruiken hier expliciet
+   * de CRS84 bbox.
+   */
+
+  const delta =
+    0.0001;
+
+
+  const bbox = [
+    lon - delta,
+    lat - delta,
+    lon + delta,
+    lat + delta
+  ].join(',');
+
+
+  const url =
+    'https://api.pdok.nl/kadaster/bag/ogc/v2' +
+    '/collections/adres/items' +
+    '?bbox=' +
+    encodeURIComponent(bbox) +
+    '&limit=20' +
+    '&f=json';
+
+
+  console.log(
+    'BAG URL:',
+    url
+  );
+
+
+  const response =
+    await fetch(url);
+
+
+  const text =
+    await response.text();
+
+
+  console.log(
+    'BAG response:',
+    text
+  );
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      'BAG HTTP ' +
+      response.status +
+      '\n' +
+      text.substring(0, 1000)
+    );
+  }
+
+
+  let json;
+
+  try {
+
+    json =
+      JSON.parse(text);
+
+  } catch {
+
+    throw new Error(
+      'BAG antwoord is geen JSON:\n' +
+      text.substring(0, 1000)
+    );
+  }
+
+
+  const features =
+    json.features || [];
+
+
+  if (!features.length) {
+
+    throw new Error(
+      'BAG adres-collectie gaf geen resultaten.'
+    );
+  }
+
+
+  /*
+   * Toon de eerste resultaten.
+   */
+
+  return features;
+}
+
+
+async function search() {
+
+  button.disabled =
+    true;
+
+
+  try {
+
+    show(
+      '1. Adres zoeken via PDOK…'
+    );
+
+
+    const location =
+      await geocode(
+        address.value.trim()
+      );
+
+
+    show(
+      '1. Adres gevonden:\n\n' +
+      location.label +
+      '\n\n' +
+      'longitude: ' +
+      location.lon +
+      '\n' +
+      'latitude: ' +
+      location.lat +
+      '\n\n' +
+      '2. BAG adres zoeken…'
+    );
+
+
+    const features =
+      await findBagAddress(
+        location.lon,
+        location.lat
+      );
+
+
+    let output =
+      'BAG RESULTAAT\n' +
+      '====================\n\n';
+
+
+    features.forEach(
+      (feature, index) => {
+
+        const p =
+          feature.properties || {};
+
+
+        output +=
+          'Resultaat ' +
+          (index + 1) +
+          '\n';
+
+
+        output +=
+          'BAG id: ' +
+          (
+            feature.id ||
+            'onbekend'
+          ) +
+          '\n';
+
+
+        output +=
+          'identificatie: ' +
+          (
+            p.identificatie ||
+            'onbekend'
+          ) +
+          '\n';
+
+
+        output +=
+          'straat: ' +
+          (
+            p.openbare_ruimte_naam ||
+            'onbekend'
+          ) +
+          '\n';
+
+
+        output +=
+          'huisnummer: ' +
+          (
+            p.huisnummer ||
+            'onbekend'
+          ) +
+          '\n';
+
+
+        output +=
+          'postcode: ' +
+          (
+            p.postcode ||
+            'onbekend'
+          ) +
+          '\n';
+
+
+        output +=
+          'woonplaats: ' +
+          (
+            p.woonplaats_naam ||
+            'onbekend'
+          ) +
+          '\n\n';
+      }
+    );
+
+
+    show(output);
+
+
+  } catch (error) {
+
+    console.error(error);
+
+
+    show(
+      'FOUT\n' +
+      '====================\n\n' +
+      error.message
+    );
+
+
+  } finally {
+
+    button.disabled =
+      false;
+  }
+}
+
+
+button.addEventListener(
+  'click',
+  search
+);
+
+
+address.addEventListener(
+  'keydown',
+  event => {
+
+    if (
+      event.key === 'Enter'
+    ) {
+      search();
+    }
+  }
+);
+
+</script>
+
+</body>
+</html>
