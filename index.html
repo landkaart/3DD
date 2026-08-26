@@ -3,77 +3,120 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PDOK test</title>
+
+<title>PDOK adresselectie</title>
 
 <style>
 body {
+  margin: 0;
+  padding: 20px;
   font-family: system-ui, sans-serif;
   background: #111;
   color: #eee;
-  padding: 20px;
+}
+
+input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  font-size: 16px;
+  background: #222;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 7px;
 }
 
 button {
-  font-size: 18px;
-  padding: 12px 18px;
   margin-top: 10px;
+  padding: 12px 18px;
+  font-size: 16px;
+  font-weight: bold;
+  border: 0;
+  border-radius: 7px;
 }
 
-pre {
-  white-space: pre-wrap;
-  word-break: break-word;
+#status {
+  margin-top: 15px;
+}
+
+.resultaat {
+  margin-top: 10px;
+  padding: 14px;
   background: #222;
-  padding: 12px;
   border-radius: 8px;
+  cursor: pointer;
+}
+
+.resultaat:active {
+  background: #444;
+}
+
+.adres {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.details {
+  margin-top: 6px;
+  color: #aaa;
+  font-size: 12px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>🇳🇱 PDOK test</h1>
+<h2>🇳🇱 PDOK adresselectie</h2>
 
 <input
   id="adres"
   value="Stationsweg 1, Leeuwarden"
-  style="font-size:16px;padding:10px;width:100%;box-sizing:border-box"
 >
 
-<br>
-
-<button id="test">
-TEST PDOK
+<button id="zoek">
+ZOEK ADRES
 </button>
 
-<pre id="resultaat">Nog niets getest.</pre>
+<div id="status">
+Nog niet gezocht.
+</div>
+
+<div id="resultaten"></div>
 
 
 <script>
 
-document.getElementById("test").onclick =
+const adres =
+document.getElementById("adres");
+
+const zoek =
+document.getElementById("zoek");
+
+const status =
+document.getElementById("status");
+
+const resultaten =
+document.getElementById("resultaten");
+
+
+zoek.onclick =
 async function () {
 
-  const output =
-    document.getElementById("resultaat");
+  resultaten.innerHTML = "";
 
-  const adres =
-    document.getElementById("adres").value.trim();
-
-  output.textContent =
-    "PDOK wordt aangeroepen…";
-
+  status.textContent =
+    "PDOK zoeken…";
 
   try {
 
     const url =
       "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free" +
       "?q=" +
-      encodeURIComponent(adres) +
+      encodeURIComponent(
+        adres.value.trim()
+      ) +
       "&fq=type:adres" +
-      "&rows=1";
-
-
-    console.log(url);
+      "&rows=10";
 
 
     const response =
@@ -84,23 +127,159 @@ async function () {
       await response.text();
 
 
-    output.textContent =
-      "HTTP " +
-      response.status +
-      "\n\n" +
-      text;
+    if (!response.ok) {
+
+      throw new Error(
+        "HTTP " +
+        response.status +
+        "\n" +
+        text
+      );
+    }
+
+
+    const json =
+      JSON.parse(text);
+
+
+    const docs =
+      json.response?.docs || [];
+
+
+    status.textContent =
+      docs.length +
+      " resultaten gevonden.";
+
+
+    docs.forEach(
+      function (d, index) {
+
+        const div =
+          document.createElement(
+            "div"
+          );
+
+
+        div.className =
+          "resultaat";
+
+
+        div.innerHTML =
+
+          '<div class="adres">' +
+          escapeHtml(
+            d.weergavenaam ||
+            "Onbekend adres"
+          ) +
+          '</div>' +
+
+          '<div class="details">' +
+          'huisnummer: ' +
+          escapeHtml(
+            d.huisnummer
+          ) +
+          ' · huisletter: ' +
+          escapeHtml(
+            d.huisletter ||
+            "-"
+          ) +
+          ' · toevoeging: ' +
+          escapeHtml(
+            d.huisnummertoevoeging ||
+            "-"
+          ) +
+          '<br>' +
+          'BAG object: ' +
+          escapeHtml(
+            d.adresseerbaarobject_id ||
+            "-"
+          ) +
+          '</div>';
+
+
+        div.onclick =
+          function () {
+
+            status.innerHTML =
+              "<b>Gekozen:</b><br>" +
+              escapeHtml(
+                d.weergavenaam
+              ) +
+              "<br><br>" +
+              "<b>Verblijfsobject:</b> " +
+              escapeHtml(
+                d.adresseerbaarobject_id
+              ) +
+              "<br><br>" +
+              "Coördinaten:<br>" +
+              escapeHtml(
+                d.centroide_ll
+              );
+
+            /*
+             * Alles staat ook in de console,
+             * zodat we later exact dezelfde
+             * gegevens kunnen gebruiken.
+             */
+
+            console.log(
+              "GEKOZEN PDOK ADRES",
+              d
+            );
+          };
+
+
+        resultaten.appendChild(
+          div
+        );
+      }
+    );
+
+
+    if (!docs.length) {
+
+      status.textContent =
+        "Geen adressen gevonden.";
+    }
 
 
   } catch (error) {
 
-    output.textContent =
-      "JAVASCRIPT/FETCH FOUT:\n\n" +
-      error.message +
-      "\n\n" +
-      error.stack;
+    status.textContent =
+      "FOUT: " +
+      error.message;
   }
-
 };
+
+
+function escapeHtml(
+  value
+) {
+
+  return String(
+    value ?? ""
+  )
+  .replaceAll(
+    "&",
+    "&amp;"
+  )
+  .replaceAll(
+    "<",
+    "&lt;"
+  )
+  .replaceAll(
+    ">",
+    "&gt;"
+  )
+  .replaceAll(
+    '"',
+    "&quot;"
+  )
+  .replaceAll(
+    "'",
+    "&#039;"
+  );
+}
 
 </script>
 
