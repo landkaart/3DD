@@ -3,29 +3,105 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Knop test</title>
+<title>PDOK test</title>
+
+<style>
+body {
+  font-family: system-ui, sans-serif;
+  background: #111;
+  color: #eee;
+  padding: 20px;
+}
+
+button {
+  font-size: 18px;
+  padding: 12px 18px;
+  margin-top: 10px;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #222;
+  padding: 12px;
+  border-radius: 8px;
+}
+</style>
 </head>
 
 <body>
 
-<h1>3DBAG test</h1>
+<h1>🇳🇱 PDOK test</h1>
 
-<button
-  id="test"
-  style="font-size:20px;padding:15px"
+<input
+  id="adres"
+  value="Stationsweg 1, Leeuwarden"
+  style="font-size:16px;padding:10px;width:100%;box-sizing:border-box"
 >
-  TEST
+
+<br>
+
+<button id="test">
+TEST PDOK
 </button>
 
-<p id="resultaat">
-  Nog niets gedaan.
-</p>
+<pre id="resultaat">Nog niets getest.</pre>
+
 
 <script>
-document.getElementById("test").onclick = function () {
-  document.getElementById("resultaat").textContent =
-    "DE KNOP WERKT ✔️";
+
+document.getElementById("test").onclick =
+async function () {
+
+  const output =
+    document.getElementById("resultaat");
+
+  const adres =
+    document.getElementById("adres").value.trim();
+
+  output.textContent =
+    "PDOK wordt aangeroepen…";
+
+
+  try {
+
+    const url =
+      "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free" +
+      "?q=" +
+      encodeURIComponent(adres) +
+      "&fq=type:adres" +
+      "&rows=1";
+
+
+    console.log(url);
+
+
+    const response =
+      await fetch(url);
+
+
+    const text =
+      await response.text();
+
+
+    output.textContent =
+      "HTTP " +
+      response.status +
+      "\n\n" +
+      text;
+
+
+  } catch (error) {
+
+    output.textContent =
+      "JAVASCRIPT/FETCH FOUT:\n\n" +
+      error.message +
+      "\n\n" +
+      error.stack;
+  }
+
 };
+
 </script>
 
 </body>
