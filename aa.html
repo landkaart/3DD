@@ -1,0 +1,1958 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>3DBAG adres → 3D gebouw</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #111;
+  color: #eee;
+}
+
+header {
+  padding: 14px 18px;
+  background: #1b1b1b;
+  position: relative;
+  z-index: 10;
+}
+
+h1 {
+  font-size: 18px;
+  margin: 0 0 10px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  max-width: 900px;
+}
+
+input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px;
+  border-radius: 7px;
+  border: 1px solid #555;
+  background: #222;
+  color: #fff;
+  font-size: 14px;
+}
+
+button {
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: .5;
+  cursor: wait;
+}
+
+#status {
+  margin-top: 8px;
+  color: #bbb;
+  font-size: 13px;
+  min-height: 18px;
+}
+
+#status.error {
+  color: #ff8f8f;
+}
+
+#viewer {
+  height: calc(100vh - 112px);
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+}
+
+#info {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  background: #202020e8;
+  padding: 14px;
+  border-radius: 9px;
+  min-width: 270px;
+  max-width: 400px;
+  display: none;
+  line-height: 1.5;
+  font-size: 13px;
+  z-index: 5;
+}
+
+#info b {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+#hint {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  background: #202020cc;
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  z-index: 5;
+}
+
+.small {
+  color: #aaa;
+  font-size: 11px;
+  margin-top: 9px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+
+<h1>🇳🇱 3DBAG — adres naar 3D gebouw</h1>
+
+<div class="row">
+
+<input
+  id="address"
+  value="Stationsweg 1, Leeuwarden"
+  placeholder="Bijv. Stationsweg 1, Leeuwarden"
+>
+
+<button id="go">
+  Zoek
+</button>
+
+</div>
+
+<div id="status">
+Vul een Nederlands adres in.
+</div>
+
+</header>
+
+
+<div id="viewer">
+
+<div id="info"></div>
+
+<div id="hint">
+Sleep = draaien · scroll = zoomen · klik op gebouw = informatie
+</div>
+
+</div>
+
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+
+
+<script type="module">
+
+import * as THREE from
+  'three';
+
+import {
+  OrbitControls
+} from
+  'three/addons/controls/OrbitControls.js';
+
+
+/* =========================================================
+   ELEMENTEN
+========================================================= */
+
+const viewer =
+  document.querySelector('#viewer');
+
+const addressInput =
+  document.querySelector('#address');
+
+const goButton =
+  document.querySelector('#go');
+
+const status =
+  document.querySelector('#status');
+
+const info =
+  document.querySelector('#info');
+
+
+/* =========================================================
+   THREE
+========================================================= */
+
+const scene =
+  new THREE.Scene();
+
+scene.background =
+  new THREE.Color(0x9fb3c8);
+
+
+const camera =
+  new THREE.PerspectiveCamera(
+    45,
+    viewer.clientWidth /
+      viewer.clientHeight,
+    0.1,
+    100000
+  );
+
+camera.position.set(
+  40,
+  30,
+  40
+);
+
+
+const renderer =
+  new THREE.WebGLRenderer({
+    antialias: true
+  });
+
+renderer.setPixelRatio(
+  Math.min(
+    window.devicePixelRatio,
+    2
+  )
+);
+
+renderer.setSize(
+  viewer.clientWidth,
+  viewer.clientHeight
+);
+
+viewer.prepend(
+  renderer.domElement
+);
+
+
+const controls =
+  new OrbitControls(
+    camera,
+    renderer.domElement
+  );
+
+controls.enableDamping =
+  true;
+
+controls.dampingFactor =
+  0.08;
+
+
+/* =========================================================
+   LICHT
+========================================================= */
+
+scene.add(
+  new THREE.HemisphereLight(
+    0xffffff,
+    0x555555,
+    2
+  )
+);
+
+
+const sun =
+  new THREE.DirectionalLight(
+    0xffffff,
+    2
+  );
+
+sun.position.set(
+  100,
+  150,
+  80
+);
+
+scene.add(sun);
+
+
+/* =========================================================
+   GRID
+========================================================= */
+
+scene.add(
+  new THREE.GridHelper(
+    500,
+    50,
+    0x666666,
+    0x888888
+  )
+);
+
+
+/* =========================================================
+   MODEL
+========================================================= */
+
+let model = null;
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+function setStatus(
+  text,
+  error = false
+) {
+
+  status.textContent =
+    text;
+
+  status.classList.toggle(
+    'error',
+    error
+  );
+}
+
+
+/* =========================================================
+   HTML ESCAPE
+========================================================= */
+
+function esc(value) {
+
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+
+/* =========================================================
+   NORMALIZE
+========================================================= */
+
+function normalize(value) {
+
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(
+      /[\u0300-\u036f]/g,
+      ''
+    );
+}
+
+
+/* =========================================================
+   1. PDOK LOCATIESERVER
+========================================================= */
+
+async function geocode(query) {
+
+  const url =
+    'https://api.pdok.nl/bzk/locatieserver/search/v3_1/free' +
+    '?q=' +
+    encodeURIComponent(query) +
+    '&fq=type:adres' +
+    '&rows=5';
+
+
+  const response =
+    await fetch(url);
+
+
+  const text =
+    await response.text();
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      'PDOK geocoding mislukt (' +
+      response.status +
+      '): ' +
+      text.substring(0, 500)
+    );
+  }
+
+
+  const json =
+    JSON.parse(text);
+
+
+  const docs =
+    json.response?.docs || [];
+
+
+  if (!docs.length) {
+
+    throw new Error(
+      'Adres niet gevonden'
+    );
+  }
+
+
+  const d =
+    docs[0];
+
+
+  /*
+   * Actuele Locatieserver:
+   *
+   * centroide_ll =
+   * POINT(longitude latitude)
+   */
+
+  const match =
+    String(
+      d.centroide_ll || ''
+    ).match(
+      /^POINT\s*\(\s*([+-]?\d+(?:\.\d+)?)\s+([+-]?\d+(?:\.\d+)?)\s*\)$/i
+    );
+
+
+  if (!match) {
+
+    throw new Error(
+      'PDOK gaf geen geldige centroide_ll'
+    );
+  }
+
+
+  const lon =
+    Number(match[1]);
+
+  const lat =
+    Number(match[2]);
+
+
+  if (
+    !Number.isFinite(lon) ||
+    !Number.isFinite(lat)
+  ) {
+
+    throw new Error(
+      'PDOK gaf ongeldige coördinaten'
+    );
+  }
+
+
+  return {
+
+    label:
+      d.weergavenaam ||
+      query,
+
+    lon,
+    lat,
+
+    raw:
+      d
+  };
+}
+
+
+/* =========================================================
+   2. BAG ADRES
+========================================================= */
+
+async function getBagAddress(
+  lon,
+  lat,
+  address
+) {
+
+  const delta =
+    0.00015;
+
+
+  const bbox = [
+    lon - delta,
+    lat - delta,
+    lon + delta,
+    lat + delta
+  ].join(',');
+
+
+  const url =
+    'https://api.pdok.nl/kadaster/bag/ogc/v2' +
+    '/collections/adres/items' +
+    '?bbox=' +
+    encodeURIComponent(bbox) +
+    '&limit=100' +
+    '&f=json';
+
+
+  const response =
+    await fetch(url);
+
+
+  const text =
+    await response.text();
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      'BAG-adres query mislukt (' +
+      response.status +
+      '): ' +
+      text.substring(0, 500)
+    );
+  }
+
+
+  const json =
+    JSON.parse(text);
+
+
+  const features =
+    json.features || [];
+
+
+  if (!features.length) {
+
+    throw new Error(
+      'Geen BAG-adres gevonden'
+    );
+  }
+
+
+  const d =
+    address.raw || {};
+
+
+  const wantedStreet =
+    normalize(
+      d.openbare_ruimte_naam
+    );
+
+
+  const wantedNumber =
+    String(
+      d.huisnummer ?? ''
+    );
+
+
+  const wantedLetter =
+    normalize(
+      d.huisletter
+    );
+
+
+  /*
+   * Eerst exact zoeken.
+   */
+
+  let found =
+    features.find(
+      feature => {
+
+        const p =
+          feature.properties || {};
+
+
+        return (
+          normalize(
+            p.openbare_ruimte_naam
+          ) === wantedStreet &&
+
+          String(
+            p.huisnummer ?? ''
+          ) === wantedNumber &&
+
+          normalize(
+            p.huisletter
+          ) === wantedLetter
+        );
+      }
+    );
+
+
+  /*
+   * Als huisletter ontbreekt:
+   * straat + nummer.
+   */
+
+  if (!found) {
+
+    found =
+      features.find(
+        feature => {
+
+          const p =
+            feature.properties || {};
+
+
+          return (
+            normalize(
+              p.openbare_ruimte_naam
+            ) === wantedStreet &&
+
+            String(
+              p.huisnummer ?? ''
+            ) === wantedNumber
+          );
+        }
+      );
+  }
+
+
+  if (!found) {
+
+    throw new Error(
+      'BAG-resultaten gevonden, maar het exacte adres niet'
+    );
+  }
+
+
+  return found;
+}
+
+
+/* =========================================================
+   3. VERBLIJFSOBJECT ZOEKEN
+=========================================================
+
+   BELANGRIJK:
+
+   De BAG-identificatie is NIET de feature-ID.
+
+   We halen daarom eerst de verblijfsobjecten
+   rond het adres op.
+
+   Daarna vergelijken we de property
+   "identificatie".
+
+   De gevonden feature heeft vervolgens
+   een echte UUID als feature.id.
+========================================================= */
+
+async function findVerblijfsobject(
+  lon,
+  lat,
+  address
+) {
+
+  const delta =
+    0.00015;
+
+
+  const bbox = [
+    lon - delta,
+    lat - delta,
+    lon + delta,
+    lat + delta
+  ].join(',');
+
+
+  const url =
+    'https://api.pdok.nl/kadaster/bag/ogc/v2' +
+    '/collections/verblijfsobject/items' +
+    '?bbox=' +
+    encodeURIComponent(bbox) +
+    '&limit=100' +
+    '&f=json';
+
+
+  const response =
+    await fetch(url);
+
+
+  const text =
+    await response.text();
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      'BAG-verblijfsobject query mislukt (' +
+      response.status +
+      '): ' +
+      text.substring(0, 500)
+    );
+  }
+
+
+  const json =
+    JSON.parse(text);
+
+
+  const features =
+    json.features || [];
+
+
+  if (!features.length) {
+
+    throw new Error(
+      'Geen BAG-verblijfsobjecten rond het adres gevonden'
+    );
+  }
+
+
+  const wantedId =
+    address
+      .properties
+      ?.adresseerbaar_object_identificatie;
+
+
+  if (!wantedId) {
+
+    throw new Error(
+      'BAG-adres heeft geen adresseerbaar_object_identificatie'
+    );
+  }
+
+
+  /*
+   * Exacte identificatie.
+   */
+
+  const found =
+    features.find(
+      feature =>
+        String(
+          feature.properties
+            ?.identificatie || ''
+        ) ===
+        String(wantedId)
+    );
+
+
+  if (!found) {
+
+    throw new Error(
+      'BAG-verblijfsobject ' +
+      wantedId +
+      ' niet gevonden in de omgeving'
+    );
+  }
+
+
+  /*
+   * Controleer UUID.
+   */
+
+  if (!found.id) {
+
+    throw new Error(
+      'BAG-verblijfsobject gevonden, maar UUID ontbreekt'
+    );
+  }
+
+
+  return found;
+}
+
+
+/* =========================================================
+   4. PAND OPHALEN VIA RELATIE
+========================================================= */
+
+async function getPand(
+  verblijfsobject
+) {
+
+  const p =
+    verblijfsobject.properties || {};
+
+
+  /*
+   * In de actuele BAG API is "pand"
+   * een relatie-array.
+   */
+
+  let relations =
+    p.pand;
+
+
+  /*
+   * Soms kan de relatie op feature-niveau
+   * staan.
+   */
+
+  if (!relations) {
+    relations =
+      verblijfsobject.pand;
+  }
+
+
+  if (
+    !Array.isArray(relations)
+  ) {
+
+    relations = [];
+  }
+
+
+  /*
+   * Zoek eerst een href.
+   */
+
+  const hrefs =
+    relations
+      .map(
+        relation =>
+          relation?.href ||
+          relation?.url ||
+          (
+            typeof relation ===
+            'string'
+              ? relation
+              : null
+          )
+      )
+      .filter(Boolean);
+
+
+  /*
+   * De actuele BAG API toont bijvoorbeeld:
+   *
+   * pand.href
+   * https://api.pdok.nl/.../pand/items/<UUID>
+   *
+   * We volgen die URL rechtstreeks.
+   */
+
+  if (!hrefs.length) {
+
+    throw new Error(
+      'Geen pand-relatie gevonden in het BAG-verblijfsobject'
+    );
+  }
+
+
+  for (
+    const href
+    of hrefs
+  ) {
+
+    const response =
+      await fetch(href);
+
+
+    if (!response.ok) {
+      continue;
+    }
+
+
+    const pand =
+      await response.json();
+
+
+    if (
+      pand?.properties
+        ?.identificatie
+    ) {
+
+      return pand;
+    }
+  }
+
+
+  throw new Error(
+    'BAG-pand kon niet via de pand-relatie worden opgehaald'
+  );
+}
+
+
+/* =========================================================
+   5. 3DBAG
+========================================================= */
+
+async function get3DBAG(
+  pandIdentification
+) {
+
+  const clean =
+    String(
+      pandIdentification
+    )
+      .replace(
+        /^NL\.IMBAG\.Pand\./i,
+        ''
+      );
+
+
+  const id =
+    'NL.IMBAG.Pand.' +
+    clean;
+
+
+  const url =
+    'https://api.3dbag.nl' +
+    '/collections/pand/items/' +
+    encodeURIComponent(id);
+
+
+  const response =
+    await fetch(url);
+
+
+  const text =
+    await response.text();
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      '3DBAG-model niet gevonden (' +
+      response.status +
+      '): ' +
+      text.substring(0, 700)
+    );
+  }
+
+
+  try {
+
+    return JSON.parse(text);
+
+  } catch {
+
+    throw new Error(
+      '3DBAG gaf geen geldige JSON terug'
+    );
+  }
+}
+
+
+/* =========================================================
+   CITYJSON FEATURES
+========================================================= */
+
+function getFeatures(
+  data
+) {
+
+  const result = [];
+
+
+  if (data?.feature) {
+    result.push(data.feature);
+  }
+
+
+  if (
+    Array.isArray(
+      data?.features
+    )
+  ) {
+
+    result.push(
+      ...data.features
+    );
+  }
+
+
+  if (
+    data?.type ===
+    'CityJSONFeature'
+  ) {
+
+    result.push(data);
+  }
+
+
+  return result;
+}
+
+
+/* =========================================================
+   VERTEX
+========================================================= */
+
+function decodeVertex(
+  index,
+  vertices,
+  transform
+) {
+
+  const v =
+    vertices[index];
+
+
+  if (!v) {
+
+    throw new Error(
+      'Ongeldige CityJSON vertex'
+    );
+  }
+
+
+  let x =
+    Number(v[0]);
+
+  let y =
+    Number(v[1]);
+
+  let z =
+    Number(v[2]);
+
+
+  if (transform) {
+
+    const scale =
+      transform.scale ||
+      [1, 1, 1];
+
+    const translate =
+      transform.translate ||
+      [0, 0, 0];
+
+
+    x =
+      x * scale[0] +
+      translate[0];
+
+    y =
+      y * scale[1] +
+      translate[1];
+
+    z =
+      z * scale[2] +
+      translate[2];
+  }
+
+
+  return {
+    x,
+    y,
+    z
+  };
+}
+
+
+/* =========================================================
+   ORIGIN
+========================================================= */
+
+function findOrigin(
+  data
+) {
+
+  const features =
+    getFeatures(data);
+
+
+  for (
+    const feature
+    of features
+  ) {
+
+    const geometry =
+      feature.geometry;
+
+
+    if (!geometry) {
+      continue;
+    }
+
+
+    const vertices =
+      geometry.vertices;
+
+
+    if (
+      !Array.isArray(vertices) ||
+      !vertices.length
+    ) {
+
+      continue;
+    }
+
+
+    const transform =
+      geometry.transform ||
+      feature.transform ||
+      data.transform ||
+      null;
+
+
+    return decodeVertex(
+      0,
+      vertices,
+      transform
+    );
+  }
+
+
+  return {
+    x: 0,
+    y: 0,
+    z: 0
+  };
+}
+
+
+/* =========================================================
+   SURFACE
+========================================================= */
+
+function addSurface(
+  group,
+  ring,
+  vertices,
+  transform,
+  origin,
+  material,
+  objectName
+) {
+
+  if (
+    !Array.isArray(ring) ||
+    ring.length < 3
+  ) {
+
+    return 0;
+  }
+
+
+  const points =
+    ring.map(
+      index => {
+
+        const v =
+          decodeVertex(
+            index,
+            vertices,
+            transform
+          );
+
+
+        return new THREE.Vector3(
+          v.x - origin.x,
+          v.z - origin.z,
+          -(v.y - origin.y)
+        );
+      }
+    );
+
+
+  /*
+   * Verwijder afsluitende dubbele vertex.
+   */
+
+  if (
+    points.length > 3 &&
+    points[0].distanceTo(
+      points[
+        points.length - 1
+      ]
+    ) < 0.000001
+  ) {
+
+    points.pop();
+  }
+
+
+  if (
+    points.length < 3
+  ) {
+
+    return 0;
+  }
+
+
+  let count = 0;
+
+
+  /*
+   * Eenvoudige fan-triangulatie.
+   */
+
+  for (
+    let i = 1;
+    i < points.length - 1;
+    i++
+  ) {
+
+    const geometry =
+      new THREE.BufferGeometry()
+        .setFromPoints([
+          points[0],
+          points[i],
+          points[i + 1]
+        ]);
+
+
+    geometry.computeVertexNormals();
+
+
+    const mesh =
+      new THREE.Mesh(
+        geometry,
+        material.clone()
+      );
+
+
+    mesh.userData = {
+      object:
+        objectName
+    };
+
+
+    group.add(mesh);
+
+
+    count++;
+  }
+
+
+  return count;
+}
+
+
+/* =========================================================
+   CITYJSON RENDER
+========================================================= */
+
+function renderCityJSON(
+  data
+) {
+
+  if (model) {
+
+    scene.remove(model);
+
+
+    model.traverse(
+      object => {
+
+        if (
+          object.geometry
+        ) {
+
+          object.geometry.dispose();
+        }
+
+
+        if (
+          object.material
+        ) {
+
+          if (
+            Array.isArray(
+              object.material
+            )
+          ) {
+
+            object.material.forEach(
+              m =>
+                m.dispose()
+            );
+
+          } else {
+
+            object.material.dispose();
+          }
+        }
+      }
+    );
+  }
+
+
+  model =
+    new THREE.Group();
+
+
+  const material =
+    new THREE.MeshStandardMaterial({
+      color: 0xd6d6d6,
+      side: THREE.DoubleSide,
+      roughness: .85
+    });
+
+
+  const origin =
+    findOrigin(data);
+
+
+  const features =
+    getFeatures(data);
+
+
+  let triangles = 0;
+
+
+  for (
+    const feature
+    of features
+  ) {
+
+    const geometry =
+      feature.geometry;
+
+
+    if (!geometry) {
+      continue;
+    }
+
+
+    const vertices =
+      geometry.vertices || [];
+
+
+    const transform =
+      geometry.transform ||
+      feature.transform ||
+      data.transform ||
+      null;
+
+
+    const cityObjects =
+      geometry.CityObjects ||
+      feature.CityObjects ||
+      {};
+
+
+    for (
+      const [
+        objectName,
+        cityObject
+      ]
+      of Object.entries(
+        cityObjects
+      )
+    ) {
+
+      const geometries =
+        cityObject.geometry || [];
+
+
+      for (
+        const g
+        of geometries
+      ) {
+
+        const boundaries =
+          g.boundaries || [];
+
+
+        for (
+          const shell
+          of boundaries
+        ) {
+
+          if (
+            !Array.isArray(shell)
+          ) {
+            continue;
+          }
+
+
+          for (
+            const surface
+            of shell
+          ) {
+
+            if (
+              !Array.isArray(surface)
+            ) {
+              continue;
+            }
+
+
+            let ring =
+              surface;
+
+
+            /*
+             * Soms:
+             *
+             * [0,1,2,3]
+             *
+             * soms:
+             *
+             * [[0,1,2,3]]
+             */
+
+            if (
+              Array.isArray(
+                surface[0]
+              )
+            ) {
+
+              ring =
+                surface[0];
+            }
+
+
+            triangles +=
+              addSurface(
+                model,
+                ring,
+                vertices,
+                transform,
+                origin,
+                material,
+                objectName
+              );
+          }
+        }
+      }
+    }
+  }
+
+
+  if (
+    !model.children.length
+  ) {
+
+    throw new Error(
+      '3DBAG-model bevat geen renderbare vlakken'
+    );
+  }
+
+
+  scene.add(model);
+
+
+  const box =
+    new THREE.Box3()
+      .setFromObject(model);
+
+
+  const center =
+    box.getCenter(
+      new THREE.Vector3()
+    );
+
+
+  model.position.sub(center);
+
+
+  const size =
+    box.getSize(
+      new THREE.Vector3()
+    );
+
+
+  const radius =
+    Math.max(
+      size.x,
+      size.y,
+      size.z,
+      1
+    );
+
+
+  const distance =
+    Math.max(
+      radius * 2.5,
+      20
+    );
+
+
+  camera.position.set(
+    distance,
+    distance * .75,
+    distance
+  );
+
+
+  camera.near =
+    Math.max(
+      .01,
+      radius / 10000
+    );
+
+
+  camera.far =
+    Math.max(
+      1000,
+      radius * 20
+    );
+
+
+  camera.updateProjectionMatrix();
+
+
+  controls.target.set(
+    0,
+    0,
+    0
+  );
+
+
+  controls.update();
+
+
+  return triangles;
+}
+
+
+/* =========================================================
+   HOOFDZOEK
+========================================================= */
+
+async function search() {
+
+  const query =
+    addressInput.value.trim();
+
+
+  if (!query) {
+
+    setStatus(
+      'Vul eerst een adres in.',
+      true
+    );
+
+    return;
+  }
+
+
+  goButton.disabled =
+    true;
+
+
+  info.style.display =
+    'none';
+
+
+  try {
+
+    /* -----------------------------------
+       1. PDOK
+    ----------------------------------- */
+
+    setStatus(
+      '1/5 Adres zoeken…'
+    );
+
+
+    const address =
+      await geocode(
+        query
+      );
+
+
+    /* -----------------------------------
+       2. BAG ADRES
+    ----------------------------------- */
+
+    setStatus(
+      '2/5 BAG-adres zoeken…'
+    );
+
+
+    const bagAddress =
+      await getBagAddress(
+        address.lon,
+        address.lat,
+        address
+      );
+
+
+    const bagProperties =
+      bagAddress.properties ||
+      {};
+
+
+    const voIdentification =
+      bagProperties
+        .adresseerbaar_object_identificatie;
+
+
+    if (!voIdentification) {
+
+      throw new Error(
+        'BAG-adres heeft geen verblijfsobject-ID'
+      );
+    }
+
+
+    /* -----------------------------------
+       3. VERBLIJFSOBJECT
+    ----------------------------------- */
+
+    setStatus(
+      '3/5 BAG-verblijfsobject zoeken…'
+    );
+
+
+    const vo =
+      await findVerblijfsobject(
+        address.lon,
+        address.lat,
+        bagAddress
+      );
+
+
+    /* -----------------------------------
+       4. PAND
+    ----------------------------------- */
+
+    setStatus(
+      '4/5 BAG-pand bepalen…'
+    );
+
+
+    const pand =
+      await getPand(vo);
+
+
+    const pandProperties =
+      pand.properties ||
+      {};
+
+
+    const pandIdentification =
+      pandProperties.identificatie;
+
+
+    if (!pandIdentification) {
+
+      throw new Error(
+        'BAG-pand heeft geen identificatie'
+      );
+    }
+
+
+    /* -----------------------------------
+       5. 3DBAG
+    ----------------------------------- */
+
+    setStatus(
+      '5/5 3DBAG 3D-model ophalen…'
+    );
+
+
+    const data =
+      await get3DBAG(
+        pandIdentification
+      );
+
+
+    setStatus(
+      '3D-gebouw tekenen…'
+    );
+
+
+    const triangles =
+      renderCityJSON(
+        data
+      );
+
+
+    /* -----------------------------------
+       INFO
+    ----------------------------------- */
+
+    const straat =
+      bagProperties
+        .openbare_ruimte_naam ||
+      address.raw
+        ?.openbare_ruimte_naam ||
+      '';
+
+
+    const nummer =
+      bagProperties
+        .huisnummer ??
+      address.raw
+        ?.huisnummer ??
+      '';
+
+
+    const letter =
+      bagProperties
+        .huisletter ||
+      '';
+
+
+    const postcode =
+      bagProperties
+        .postcode ||
+      '';
+
+
+    const plaats =
+      bagProperties
+        .woonplaats_naam ||
+      '';
+
+
+    const bouwjaar =
+      pandProperties
+        .bouwjaar ??
+      'onbekend';
+
+
+    const pandStatus =
+      pandProperties
+        .status ??
+      'onbekend';
+
+
+    info.innerHTML = `
+
+      <b>
+        ${esc(
+          straat +
+          ' ' +
+          nummer +
+          letter +
+          ', ' +
+          postcode +
+          ' ' +
+          plaats
+        )}
+      </b>
+
+      <div>
+        BAG-pand:
+        ${esc(
+          pandIdentification
+        )}
+      </div>
+
+      <div>
+        Bouwjaar:
+        ${esc(
+          bouwjaar
+        )}
+      </div>
+
+      <div>
+        Status:
+        ${esc(
+          pandStatus
+        )}
+      </div>
+
+      <div>
+        3D-driehoeken:
+        ${triangles.toLocaleString(
+          'nl-NL'
+        )}
+      </div>
+
+      <div class="small">
+        PDOK BAG → 3DBAG
+      </div>
+
+    `;
+
+
+    info.style.display =
+      'block';
+
+
+    setStatus(
+      'Klaar — draai en zoom het gebouw.'
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      error
+    );
+
+
+    setStatus(
+      'Fout: ' +
+      (
+        error.message ||
+        String(error)
+      ),
+      true
+    );
+
+  } finally {
+
+    goButton.disabled =
+      false;
+  }
+}
+
+
+/* =========================================================
+   KLIKKEN
+========================================================= */
+
+const raycaster =
+  new THREE.Raycaster();
+
+const mouse =
+  new THREE.Vector2();
+
+
+renderer.domElement.addEventListener(
+  'click',
+  event => {
+
+    if (!model) {
+      return;
+    }
+
+
+    const rect =
+      renderer.domElement
+        .getBoundingClientRect();
+
+
+    mouse.x =
+      (
+        (event.clientX -
+          rect.left) /
+        rect.width
+      ) * 2 - 1;
+
+
+    mouse.y =
+      -(
+        (event.clientY -
+          rect.top) /
+        rect.height
+      ) * 2 + 1;
+
+
+    raycaster.setFromCamera(
+      mouse,
+      camera
+    );
+
+
+    const hits =
+      raycaster.intersectObjects(
+        model.children,
+        true
+      );
+
+
+    const hit =
+      hits.find(
+        h =>
+          h.object?.userData?.object
+      );
+
+
+    if (!hit) {
+      return;
+    }
+
+
+    info.style.display =
+      'block';
+
+
+    info.innerHTML = `
+
+      <b>
+        3DBAG-oppervlak
+      </b>
+
+      <div>
+        CityObject:
+        ${esc(
+          hit.object.userData.object
+        )}
+      </div>
+
+    `;
+  }
+);
+
+
+/* =========================================================
+   EVENTS
+========================================================= */
+
+goButton.addEventListener(
+  'click',
+  search
+);
+
+
+addressInput.addEventListener(
+  'keydown',
+  event => {
+
+    if (
+      event.key === 'Enter'
+    ) {
+
+      search();
+    }
+  }
+);
+
+
+/* =========================================================
+   RESIZE
+========================================================= */
+
+window.addEventListener(
+  'resize',
+  () => {
+
+    const width =
+      viewer.clientWidth;
+
+    const height =
+      viewer.clientHeight;
+
+
+    camera.aspect =
+      width / height;
+
+
+    camera.updateProjectionMatrix();
+
+
+    renderer.setSize(
+      width,
+      height
+    );
+  }
+);
+
+
+/* =========================================================
+   ANIMATE
+========================================================= */
+
+function animate() {
+
+  requestAnimationFrame(
+    animate
+  );
+
+  controls.update();
+
+  renderer.render(
+    scene,
+    camera
+  );
+}
+
+
+animate();
+
+</script>
+
+</body>
+</html>
